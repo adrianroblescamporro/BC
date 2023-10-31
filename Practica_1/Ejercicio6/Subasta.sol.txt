@@ -1,0 +1,115 @@
+//SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8.10;
+
+contract SubastaArte{
+    address public propietario;
+    uint public duracionSubasta;
+    uint public precioMinimo;
+    uint public momentoFinalSubasta;
+    uint public obraActual;
+    bool public subastaFinalizada; 
+
+    struct ObraDeArte {
+        string titulo;
+        uint precioGanador;
+        address ganador;
+        bool vendida;
+    }
+    mapping(uint => ObraDeArte) public obras;
+    mapping(address => mapping(uint => uint)) ofertas; 
+    mapping(uint => address[]) participantesPorObra; 
+
+    event NuevaOferta(uint obraID, address participante, uint cantidad);
+    event SubastaFinalizada(uint obraID, address ganador, uint cantidad);
+
+    constructor(uint _duracionSubasta) {
+        propietario = msg.sender;
+        duracionSubasta = _duracionSubasta;
+        momentoFinalSubasta = block.timestamp + duracionSubasta;
+        subastaFinalizada = true;
+        obraActual = 0;
+    }
+
+    modifier soloPropietario() {
+        require(msg.sender == propietario, "Solo el propietario puede llamar a esta funcion.");
+        _;
+    }
+
+    modifier subastaActiva(uint obraID) {
+        require(block.timestamp < momentoFinalSubasta, "La subasta ha finalizado.");
+        require(!obras[obraID].vendida, "La obra de arte ya ha sido vendida.");
+        _;
+    }
+
+    function iniciarNuevaSubasta(string memory _titulo, uint _precioInicial) public soloPropietario {
+        require(subastaFinalizada == true, "La subasta anterior no ha finalizado.");
+        require(obraActual == 0 || obras[obraActual].vendida, "La obra de arte actual no se ha vendido.");
+
+        obraActual++;
+        subastaFinalizada = false;
+        precioMinimo = _precioInicial;
+        obras[obraActual] = ObraDeArte(_titulo, 0, address(0), false);
+        participantesPorObra[obraActual].push(propietario);
+        momentoFinalSubasta = block.timestamp + duracionSubasta;
+        
+    }
+
+    function realizarOferta(uint _obraID) public payable subastaActiva(_obraID) {
+        require(msg.value > precioMinimo, "La oferta debe superar el precio minimo.");
+        ofertas[msg.sender][_obraID] += msg.value;
+
+        if (ofertas[msg.sender][_obraID] > obras[_obraID].precioGanador) {
+            obras[_obraID].precioGanador = ofertas[msg.sender][_obraID];
+            obras[_obraID].ganador = msg.sender;
+        }
+
+        if (ofertas[msg.sender][_obraID] == msg.value) {
+            participantesPorObra[_obraID].push(msg.sender);
+        }
+
+        emit NuevaOferta(_obraID, msg.sender, msg.value);
+    }
+
+    function finalizarSubasta(uint _obraID) public soloPropietario {
+        require(block.timestamp >= momentoFinalSubasta, "La subasta aun esta activa.");
+        require(!obras[_obraID].vendida, "La obra de arte ya ha sido vendida.");
+
+        obras[_obraID].vendida = true;
+        subastaFinalizada = true;
+
+        if (obras[_obraID].ganador != address(0)) {
+            address ganador = obras[_obraID].ganador;
+            uint cantidad = obras[_obraID].precioGanador;
+            payable(propietario).transfer(cantidad);
+            emit SubastaFinalizada(_obraID, ganador, cantidad);
+        }
+
+        recuperarFondos(_obraID);
+    }
+
+    function recuperarFondos(uint _obraID) private  {
+        for (uint i = 0; i < participantesPorObra[_obraID].length; i++) {
+            address participante = participantesPorObra[_obraID][i];
+            if (participante != obras[_obraID].ganador) {
+                uint cantidad = ofertas[participante][_obraID];
+                if (cantidad > 0) {
+                    ofertas[participante][_obraID] = 0;
+                    payable(participante).transfer(cantidad);
+                }
+            }
+        }
+    }
+
+    function obtenerParticipantes(uint _obraID) public view returns (address[] memory) {
+        return participantesPorObra[_obraID];
+    }
+
+    function obtenerSaldo(address participante, uint _obraID) public view returns (uint) {
+        return ofertas[participante][_obraID];
+    }
+
+    function obtenerTituloObra(uint _obraID) public view returns (string memory) {
+        return obras[_obraID].titulo;
+    }
+
+}
