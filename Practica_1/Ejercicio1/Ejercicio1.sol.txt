@@ -1,0 +1,52 @@
+//SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8.10;
+contract FabricaContract  {
+ uint idDigits = 16;
+ struct Producto{
+     string nombre;
+     uint identificador;
+ }
+
+ Producto[] public productos;
+
+ function _crearProducto(string memory _nombre, uint _id) private{
+     productos.push(Producto(_nombre,_id));
+     emit NuevoProducto(productos.length, _nombre, _id);
+ }
+
+ function _generarIdAleatorio(string memory _str) private view returns (uint){
+     uint rand = uint(keccak256(abi.encodePacked(_str)));
+     uint idModulus = 10^idDigits;
+     rand = rand%idModulus;
+     return rand;
+ }
+
+ function crearProductoAleatorio(string memory _nombre) public{
+     uint randId = _generarIdAleatorio(_nombre);
+     _crearProducto(_nombre, randId);
+     Propiedad(randId);
+ }
+
+ event NuevoProducto(uint ArrayProductoId, string nombre, uint id);
+
+ mapping (uint => address) public productoAPropietario;
+ mapping (address => uint) public propietarioProductos;
+
+ function Propiedad(uint _productoid) private {
+    productoAPropietario[_productoid] = msg.sender;
+    propietarioProductos[msg.sender] += 1;
+ }
+
+ function getProductosPorPropietario(address _propietario) view external returns (uint[] memory){
+    uint contador = 0;
+    uint[] memory resultado = new uint[](propietarioProductos [_propietario]);
+    for (uint x = 0;x < productos.length;x++){
+        if(productoAPropietario[productos[x].identificador]==_propietario){
+            resultado[contador]=productos[x].identificador;
+            contador+=1;
+        }
+    }
+    return resultado;
+ }
+
+}
